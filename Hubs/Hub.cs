@@ -15,9 +15,10 @@ namespace Hubs
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, serverId);
         }
-        public async Task SendMetrics(string serverId, MachineMetrics metrics)
+        public async Task SendMetrics(string serverId, string metrics)
         {
-            await Clients.GroupExcept(serverId, Context.ConnectionId).SendAsync("ReceiveMetrics", metrics);
+            Console.WriteLine($"{serverId} wants to send some metrics");
+            await Clients.Group(serverId).SendAsync("ReceiveMetrics", metrics);
         }
         public async Task PauseAgent(string serverId)
         {
