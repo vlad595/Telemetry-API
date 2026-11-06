@@ -1,0 +1,64 @@
+services:
+  telemetry-api:
+    build:
+      context: .
+    ports:
+      - "5154:8080"
+    restart: unless-stopped
+  
+  telemetry-auth-api:
+    build:
+      context: ../Telemetry-Auth_API
+    environment:
+      ConnectionString: Host=host.docker.internal;Port=5432;Database=TelemetryDB;Username=postgres;Password=34819425Vlad;
+      Auth__Key: Ty9o7geQDP2z2TF6IeCqmfPEKQ3YaWjJbu2L6FYj16rnO9Pe
+      Auth__Issuer: Telemetry-Auth-API-StableDisperson
+      Auth__Audience: Client-Of-Telemetry-Auth-API-StableDisperson
+    ports:
+      - "5068:8080"
+    restart: unless-stopped
+
+  ingestion-api:
+    build:
+      context: ../Ingestion-Telemetry_API
+    environment:
+      ASPNETCORE_HTTP_PORTS: "5289"
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__username: telemetry
+      RabbitMQ__password: telemetry-local
+    ports:
+      - "5289:5289"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hub-pusher:
+    build:
+      context: ../../Other/TelemetryHubPusherService
+    environment:
+      HubUrl: http://telemetry-api:8080/mainhub
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__User: telemetry
+      RabbitMq__Password: telemetry-local
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      telemetry-api:
+        condition: service_started
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: telemetry
+      RABBITMQ_DEFAULT_PASS: telemetry-local
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped

@@ -18,6 +18,6 @@ if (app.Environment.IsDevelopment())
 
 app.MapHub<MainHub>("/mainhub");
 
-app.MapGet("/", () => "Hello World!");
+app.MapGet("/", () => "Hub works!");
 
 app.Run();
