@@ -1,0 +1,149 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse-server
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  telemetry-api:
+    build:
+      context: .
+    ports:
+      - "127.0.0.1:5154:8080"
+    restart: unless-stopped
+  
+  
+  telemetry-auth-api:
+    build:
+      context: ../Telemetry-Auth_API
+    environment:
+      ConnectionString: "Host=postgres;Port=5432;Database=TelemetryDB;Username=postgres;Password=${POSTGRES_PASSWORD}"
+      Auth__Key: ${JWT_SECRET}
+      Auth__Issuer: Telemetry-Auth-API-StableDisperson
+      Auth__Audience: Client-Of-Telemetry-Auth-API-StableDisperson
+    ports:
+      - "127.0.0.1:5068:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+
+  ingestion-api:
+    build:
+      context: ../Ingestion-Telemetry_API
+    environment:
+      ASPNETCORE_HTTP_PORTS: "5289"
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__username: telemetry
+      RabbitMQ__password: ${RABBITMQ_PASSWORD}
+      AuthAPiUrl: http://telemetry-auth-api:8080
+    ports:
+      - "127.0.0.1:5289:5289"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hub-pusher:
+    build:
+      context: ../../Other/TelemetryHubPusherService
+    environment:
+      HubUrl: http://telemetry-api:8080/mainhub
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__User: telemetry
+      RabbitMq__Password: ${RABBITMQ_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      telemetry-api:
+        condition: service_started
+    restart: unless-stopped
+
+  telegram-message-service:
+    build: 
+      context: ../../Other/Telemetry-MessageSender
+    environment:
+      Telegram__BotToken: ${TELEGRAM_BOT_TOKEN}
+      AuthApiUrl: http://telemetry-auth-api:8080
+      RabbitMQ__Host: rabbitmq
+      RabbitMQ__UserName: telemetry
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  analytics-service:
+    build:
+      context: ../../Other/Telemetry-AnalyticsService
+    environment:
+      AuthAPiUrl: http://telemetry-auth-api:8080
+      RabbitMQ__username: telemetry
+      RabbitMQ__password: ${RABBITMQ_PASSWORD}
+      RabbitMQ__Host: rabbitmq
+      ConnectionStrings__CLickHouse: Host=clickhouse;Port=8123;Database=default;Username=admin;Password=${CLICKHOUSE_PASSWORD}
+    depends_on: 
+      rabbitmq:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  analytics-api:
+    build:
+      context: ../Telemetry-Analytics_API
+    environment:
+      AuthApiUrl: http://telemetry-auth-api:8080
+      ConnectionStrings__CLickHouse: Host=clickhouse;Port=8123;Database=default;Username=admin;Password=${CLICKHOUSE_PASSWORD}
+    ports:
+      - "127.0.0.1:5021:8080"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: telemetry
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: TelemetryDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d TelemetryDB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+volumes:
+  clickhouse_data:
+  clickhouse_logs:
+  postgres_data:
