@@ -6,15 +6,16 @@ builder.Services.AddSignalR();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(name: "AllowAllPolicy", policy => { policy.AllowAnyHeader(); policy.AllowAnyOrigin(); policy.AllowAnyMethod(); });
+    options.AddPolicy("LocalWeb", policy => policy
+        .WithOrigins("http://localhost:4200", "http://127.0.0.1:4200")
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials());
 });
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseCors("AllowAllPolicy");
-}
+app.UseCors("LocalWeb");
 
 app.MapHub<MainHub>("/mainhub");
 
